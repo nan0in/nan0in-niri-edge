@@ -14,6 +14,7 @@ uniform sampler2D tex;
 #endif
 
 uniform float alpha;
+uniform float clavis_dim;
 varying vec2 v_coords;
 
 #if defined(DEBUG_FLAGS)
@@ -49,6 +50,7 @@ void main() {
     }
 
     // Apply final alpha and tint.
+    color.rgb *= 1.0 - clamp(clavis_dim, 0.0, 1.0);
     color = color * alpha;
 
 #if defined(DEBUG_FLAGS)

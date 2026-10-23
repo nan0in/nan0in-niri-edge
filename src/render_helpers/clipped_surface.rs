@@ -22,12 +22,14 @@ pub struct ClippedSurfaceRenderElement<R: NiriRenderer> {
     corner_radius: CornerRadius,
     geometry: Rectangle<f64, Logical>,
     scale: f32,
+    dim: f32,
 }
 
 #[derive(Debug, Default, Clone)]
 pub struct RoundedCornerDamage {
     damage: ExtraDamage,
     corner_radius: CornerRadius,
+    dim: f32,
 }
 
 impl<R: NiriRenderer> ClippedSurfaceRenderElement<R> {
@@ -44,8 +46,11 @@ impl<R: NiriRenderer> ClippedSurfaceRenderElement<R> {
             corner_radius,
             geometry,
             scale: scale.x as f32,
+            dim: 0.,
         }
     }
+
+    pub fn with_dim(mut self, dim: f32) -> Self { self.dim = dim; self }
 
     fn compute_uniforms(&self) -> Vec<Uniform<'static>> {
         let scale = Scale::from(f64::from(self.scale));
@@ -93,6 +98,7 @@ impl<R: NiriRenderer> ClippedSurfaceRenderElement<R> {
 
         vec![
             Uniform::new("niri_scale", self.scale),
+            Uniform::new("clavis_dim", self.dim),
             Uniform::new("geo_size", geo_size),
             Uniform::new("corner_radius", <[f32; 4]>::from(self.corner_radius)),
             mat3_uniform("input_to_geo", input_to_geo),
@@ -290,6 +296,10 @@ impl<'render> RenderElement<TtyRenderer<'render>>
 }
 
 impl RoundedCornerDamage {
+    pub fn set_dim(&mut self, dim: f32) {
+        if self.dim != dim { self.dim = dim; self.damage.damage_all(); }
+    }
+
     pub fn set_corner_radius(&mut self, corner_radius: CornerRadius) {
         if self.corner_radius == corner_radius {
             return;

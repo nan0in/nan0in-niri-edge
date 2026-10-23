@@ -502,3 +502,50 @@ fn layouts() {
     "
     );
 }
+
+#[test]
+fn clavis_modifier_tap_release_and_combinations() {
+    let (mut f, id, surface) = set_up("binds { Super_L repeat=false { quit; }; Super+E repeat=false { quit; }; }");
+    run_f(&mut f, id, &surface, "+LWIN");
+    assert_eq!(f.niri().test_action_count, 0, "a press must never open search");
+    run_f(&mut f, id, &surface, "-LWIN");
+    assert_eq!(f.niri().test_action_count, 1);
+    run_f(&mut f, id, &surface, "+LWIN +AD03 -AD03 -LWIN");
+    assert_eq!(f.niri().test_action_count, 2, "combo executes once, without an extra tap");
+    run_f(&mut f, id, &surface, "+LCTL +LWIN -LWIN -LCTL");
+    assert_eq!(f.niri().test_action_count, 2, "a pre-held modifier cancels the tap");
+    run_f(&mut f, id, &surface, "+RWIN -RWIN");
+    assert_eq!(f.niri().test_action_count, 3, "right Super is also a tap");
+}
+
+#[test]
+fn clavis_modifier_tap_long_hold_and_pointer_cancel() {
+    let (mut f, id, surface) = set_up("binds { Super_L repeat=false { quit; }; }");
+    let state = f.niri_state();
+    let keyboard = state.niri.seat.get_keyboard().unwrap();
+    let code = keyboard.with_xkb_state(state, |xkb| {
+        let xkb = xkb.xkb().lock().unwrap();
+        unsafe { xkb.keymap() }.key_by_name("LWIN").unwrap()
+    });
+    for (micros, key_state) in [(1_000_000, KeyState::Pressed), (1_750_000, KeyState::Released)] {
+        f.niri_state().process_input_event(InputEvent::<TestInputBackend>::Keyboard {
+            event: TestKeyboardKeyEvent { time: InputTime::from_micros(micros), code, state: key_state, count: 1 },
+        });
+    }
+    assert_eq!(f.niri().test_action_count, 0);
+    run_f(&mut f, id, &surface, "+LWIN");
+    f.niri().modifier_tap.cancel();
+    run_f(&mut f, id, &surface, "-LWIN");
+    assert_eq!(f.niri().test_action_count, 0);
+    run_f(&mut f, id, &surface, "+LWIN -LWIN");
+    assert_eq!(f.niri().test_action_count, 1, "cancellation must not poison the next tap");
+}
+
+#[test]
+fn clavis_modifier_tap_keeps_client_modifier_balanced() {
+    let (mut f, id, surface) = set_up("binds { Super_L repeat=false { quit; }; }");
+    let trace = run_f(&mut f, id, &surface, "+LWIN -LWIN");
+    assert!(trace.contains("surface key pressed: 125"), "{trace}");
+    assert!(trace.contains("surface key released: 125"), "{trace}");
+    assert_eq!(f.niri().test_action_count, 1);
+}

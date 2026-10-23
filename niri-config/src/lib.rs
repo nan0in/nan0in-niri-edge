@@ -1892,6 +1892,7 @@ mod tests {
                     },
                     draw_border_with_background: None,
                     opacity: None,
+                    dim: None,
                     geometry_corner_radius: None,
                     clip_to_geometry: None,
                     baba_is_float: None,

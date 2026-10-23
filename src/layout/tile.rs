@@ -414,6 +414,7 @@ impl<W: LayoutElement> Tile<W> {
             .geometry_corner_radius()
             .fit_to(window_size.w as f32, window_size.h as f32);
         self.rounded_corner_damage.set_corner_radius(radius);
+        self.rounded_corner_damage.set_dim(self.window.rules().dim.unwrap_or(0.).clamp(0., 1.));
     }
 
     pub fn advance_animations(&mut self) {
@@ -1108,7 +1109,8 @@ impl<W: LayoutElement> Tile<W> {
 
         // Clip to geometry including during the fullscreen animation to help with buggy clients
         // that submit a full-sized buffer before acking the fullscreen state (Firefox).
-        let clip_to_geometry = fullscreen_progress < 1. && rules.clip_to_geometry == Some(true);
+        let dim = rules.dim.unwrap_or(0.).clamp(0., 1.);
+        let clip_to_geometry = dim > 0. || (fullscreen_progress < 1. && rules.clip_to_geometry == Some(true));
         let radius = self
             .window
             .geometry_corner_radius()
@@ -1215,7 +1217,7 @@ impl<W: LayoutElement> Tile<W> {
                     // If we should clip to geometry, render a clipped window.
                     if clip_to_geometry {
                         if let Some(shader) = clip_shader.clone() {
-                            if ClippedSurfaceRenderElement::will_clip(&elem, scale, geo, radius) {
+                            if dim > 0. || ClippedSurfaceRenderElement::will_clip(&elem, scale, geo, radius) {
                                 return ClippedSurfaceRenderElement::new(
                                     elem,
                                     scale,
@@ -1223,6 +1225,7 @@ impl<W: LayoutElement> Tile<W> {
                                     shader.clone(),
                                     radius,
                                 )
+                                .with_dim(dim)
                                 .into();
                             }
                         }

@@ -167,6 +167,11 @@ impl State {
         let hide_exit_confirm_dialog =
             self.niri.exit_confirm_dialog.is_open() && should_hide_exit_confirm_dialog(&event);
 
+        if matches!(&event, InputEvent::PointerButton { .. } | InputEvent::PointerAxis { .. }
+            | InputEvent::TouchDown { .. } | InputEvent::TabletToolTip { .. }
+            | InputEvent::GestureSwipeBegin { .. } | InputEvent::GesturePinchBegin { .. }) {
+            self.niri.modifier_tap.cancel();
+        }
         let mut consumed_by_a11y = false;
         use InputEvent::*;
         match event {
@@ -464,7 +469,8 @@ impl State {
         #[cfg(not(feature = "dbus"))]
         let _ = consumed_by_a11y;
 
-        let Some(Some(bind)) = self.niri.seat.get_keyboard().unwrap().input(
+        let mut released_tap = None;
+        let input_result = self.niri.seat.get_keyboard().unwrap().input(
             self,
             event.key_code(),
             event.state(),
@@ -475,6 +481,24 @@ impl State {
                 let modified = keysym.modified_sym();
                 let raw = keysym.raw_latin_sym_or_raw_current_sym();
                 let modifiers = modifiers_from_state(*mods);
+                let is_super = matches!(raw, Some(Keysym::Super_L | Keysym::Super_R));
+                let mut tap_allowed = !this.niri.is_locked() && !is_inhibiting_shortcuts
+                    && !this.niri.screenshot_ui.is_open() && !this.niri.exit_confirm_dialog.is_open()
+                    && !this.niri.window_mru_ui.is_open();
+                #[cfg(feature = "dbus")]
+                if block != KbMonBlock::Pass { tap_allowed = false; }
+                let tapped = this.niri.modifier_tap.update(key_code, is_super, pressed,
+                    Duration::from_micros(time.micros()), tap_allowed);
+                let tap_bind = this.niri.config.borrow().binds.0.iter().find(|bind|
+                    bind.key.modifiers.is_empty() && matches!(bind.key.trigger,
+                        Trigger::Keysym(Keysym::Super_L | Keysym::Super_R))).cloned().map(|mut bind| { bind.repeat = false; bind });
+                // Forward the physical modifier normally so client shortcuts and
+                // wl_keyboard modifier state remain balanced. Run the action only
+                // after keyboard.input() has finished forwarding the release.
+                if is_super && !pressed && tapped {
+                    released_tap = tap_bind;
+                    return FilterResult::Forward;
+                }
 
                 // After updating XKB state from accessibility-grabbed keys, return right away and
                 // don't handle them.
@@ -591,14 +615,13 @@ impl State {
 
                 res
             },
-        ) else {
-            return;
-        };
-
-        if !pressed {
+        );
+        if let Some(bind) = released_tap {
+            self.handle_bind(bind);
             return;
         }
-
+        let Some(Some(bind)) = input_result else { return; };
+        if !pressed { return; }
         self.handle_bind(bind.clone());
 
         self.start_key_repeat(bind);
@@ -716,11 +739,13 @@ impl State {
                 self.backend.change_vt(vt);
                 // Changing VT may not deliver the key releases, so clear the state.
                 self.niri.suppressed_keys.clear();
+                self.niri.modifier_tap.clear();
             }
             Action::Suspend => {
                 self.backend.suspend();
                 // Suspend may not deliver the key releases, so clear the state.
                 self.niri.suppressed_keys.clear();
+                self.niri.modifier_tap.clear();
             }
             Action::PowerOffMonitors => {
                 self.niri.deactivate_monitors(&mut self.backend);
@@ -4589,6 +4614,29 @@ impl State {
         let grab = grab.as_any();
 
         grab.is::<PickWindowGrab>() || grab.is::<PickColorGrab>() || Self::is_dnd_grab(grab)
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct ModifierTap {
+    keys: HashSet<Keycode>,
+    candidate: Option<(Keycode, Duration)>,
+}
+impl ModifierTap {
+    pub fn cancel(&mut self) { self.candidate = None; }
+    pub fn clear(&mut self) { self.keys.clear(); self.cancel(); }
+    fn update(&mut self, key: Keycode, is_super: bool, pressed: bool, now: Duration, allowed: bool) -> bool {
+        if !allowed { self.cancel(); }
+        if pressed {
+            let fresh = self.keys.insert(key);
+            if fresh && is_super && self.keys.len() == 1 && allowed { self.candidate = Some((key, now)); }
+            else if fresh { self.cancel(); }
+            false
+        } else {
+            self.keys.remove(&key);
+            let tapped = self.candidate.take().is_some_and(|(candidate, start)| candidate == key && is_super && allowed && now.saturating_sub(start) <= Duration::from_millis(600));
+            tapped
+        }
     }
 }
 

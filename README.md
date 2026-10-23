@@ -1,3 +1,11 @@
+<!-- nan0in fork notice -->
+> [!NOTE]
+> This is **nan0in-niri-edge**, a personal fork of
+> [`StatIndet/niri-edge`](https://github.com/StatIndet/niri-edge) based on
+> commit `b2aaeb3c` (2026-10-06). It adds a per-window `dim` rule and a native
+> Super-tap action for the Clavis shell. See [`NAN0IN.md`](NAN0IN.md) for the
+> modification list, references and the original project.
+
 <h1 align="center"><img alt="niri" src="https://github.com/user-attachments/assets/07d05cd0-d5dc-4a28-9a35-51bae8f119a0"></h1>
 <p align="center">A scrollable-tiling Wayland compositor.</p>
 <p align="center">
